@@ -10,3 +10,7 @@
 # 1 Oct 2024
 
 - Create db.go with two operations Get and Put that allow adding and retrieving a KV pair
+
+# 2 Oct 2024
+
+- DB only accepts an entry where Key is string and Value is byte[]. Consumer is expected to encode the values to binary format before saving

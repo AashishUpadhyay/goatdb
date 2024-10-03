@@ -9,9 +9,15 @@ import (
 	"testing"
 )
 
+var sstablemockstore = []string{}
+
 func TestPutAndGet(t *testing.T) {
 	// Create a new instance of the Db
-	database := NewDb()
+	database := NewDb(Options{
+		memtableThreshold: 1000,
+		dataDirLocation:   "",
+		sstableMgr:        &MockSSTableManager{},
+	})
 
 	// Test data to put into the database
 	key := "user1"
@@ -47,7 +53,10 @@ func TestPutAndGet(t *testing.T) {
 
 func TestGetNonExistentKey(t *testing.T) {
 	// Create a new instance of the Db
-	database := NewDb()
+	database := NewDb(Options{
+		memtableThreshold: 1000,
+		dataDirLocation:   "",
+	})
 
 	// Try to get an entry that does not exist
 	_, err := database.Get("nonexistent")
@@ -65,7 +74,11 @@ func TestGetNonExistentKey(t *testing.T) {
 
 func TestConcurrency(t *testing.T) {
 	// Create a new instance of the Db
-	database := NewDb()
+	database := NewDb(Options{
+		memtableThreshold: 10,
+		dataDirLocation:   "",
+		sstableMgr:        &MockSSTableManager{},
+	})
 	const iterations = 100
 	var wg sync.WaitGroup
 	wg.Add(iterations)
@@ -81,6 +94,14 @@ func TestConcurrency(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+
+	if len(database.sstables) != 10 {
+		t.Fatalf("expected %d, got: %d", 10, len(database.sstables))
+	}
+
+	if len(database.memtable) != 0 {
+		t.Fatalf("expected %d, got: %d", 0, len(database.memtable))
+	}
 
 	for i := 0; i < iterations; i++ {
 		var key = "testkey_" + strconv.Itoa(i)
@@ -109,4 +130,16 @@ func convertBytesToInt(buf []byte) int16 {
 	reader := bytes.NewReader(buf)
 	binary.Read(reader, binary.BigEndian, &retVal)
 	return retVal
+}
+
+type MockSSTableManager struct {
+}
+
+func (ffd *MockSSTableManager) WriteStrings(fileName string, data []string) error {
+	sstablemockstore = append(sstablemockstore, data...)
+	return nil
+}
+
+func (ffd *MockSSTableManager) ReadAll(fileName string) ([]string, error) {
+	return sstablemockstore, nil
 }
