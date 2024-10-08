@@ -14,9 +14,8 @@ var sstablemockstore = []string{}
 func TestPutAndGet(t *testing.T) {
 	// Create a new instance of the Db
 	database := NewDb(Options{
-		memtableThreshold: 1000,
-		dataDirLocation:   "",
-		sstableMgr:        &MockSSTableManager{},
+		MemtableThreshold: 1000,
+		SstableMgr:        &MockSSTableManager{},
 	})
 
 	// Test data to put into the database
@@ -54,8 +53,8 @@ func TestPutAndGet(t *testing.T) {
 func TestGetNonExistentKey(t *testing.T) {
 	// Create a new instance of the Db
 	database := NewDb(Options{
-		memtableThreshold: 1000,
-		dataDirLocation:   "",
+		MemtableThreshold: 1000,
+		SstableMgr:        &MockSSTableManager{},
 	})
 
 	// Try to get an entry that does not exist
@@ -74,10 +73,9 @@ func TestGetNonExistentKey(t *testing.T) {
 
 func TestConcurrency(t *testing.T) {
 	// Create a new instance of the Db
-	database := NewDb(Options{
-		memtableThreshold: 10,
-		dataDirLocation:   "",
-		sstableMgr:        &MockSSTableManager{},
+	var database *LSM = NewDb(Options{
+		MemtableThreshold: 10,
+		SstableMgr:        &MockSSTableManager{},
 	})
 	const iterations = 100
 	var wg sync.WaitGroup
@@ -95,12 +93,12 @@ func TestConcurrency(t *testing.T) {
 	}
 	wg.Wait()
 
-	if len(database.sstables) != 10 {
-		t.Fatalf("expected %d, got: %d", 10, len(database.sstables))
+	if len(database.Sstables) != 10 {
+		t.Fatalf("expected %d, got: %d", 10, len(database.Sstables))
 	}
 
-	if len(database.memtable) != 0 {
-		t.Fatalf("expected %d, got: %d", 0, len(database.memtable))
+	if len(database.Memtable) != 0 {
+		t.Fatalf("expected %d, got: %d", 0, len(database.Memtable))
 	}
 
 	for i := 0; i < iterations; i++ {

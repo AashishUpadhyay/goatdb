@@ -12,7 +12,7 @@ import (
 
 type KVController struct {
 	Logger *log.Logger
-	db     db.DB
+	Db     db.DB
 }
 
 type KV struct {
@@ -40,7 +40,7 @@ func (kvc KVController) Post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = kvc.db.Put(db.Entry{
+	err = kvc.Db.Put(db.Entry{
 		Key:   kv.Key,
 		Value: []byte(kv.Value),
 	})
@@ -59,7 +59,7 @@ func (kvc KVController) Get(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	keyName := vars["key-name"]
 
-	retrievedEntry, err := kvc.db.Get(keyName)
+	retrievedEntry, err := kvc.Db.Get(keyName)
 
 	// Test for errors in retrieving the entry
 	if err != nil {

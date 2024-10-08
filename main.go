@@ -1,7 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"github.com/AashishUpadhyay/goatdb/src/api"
+)
 
 func main() {
-	fmt.Print("Hello World!")
+	api.Index()
 }

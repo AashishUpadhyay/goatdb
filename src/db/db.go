@@ -15,9 +15,8 @@ type Entry struct {
 }
 
 type Options struct {
-	dataDirLocation   string
-	memtableThreshold int
-	sstableMgr        SSTableManager
+	MemtableThreshold int
+	SstableMgr        SSTableManager
 }
 
 type DB interface {
@@ -26,38 +25,36 @@ type DB interface {
 }
 
 type LSM struct {
-	memtable   map[string]Entry
-	sstables   []string
+	Memtable   map[string]Entry
+	Sstables   []string
 	threshold  int
 	mu         sync.RWMutex
-	dataDir    string
 	sstableMgr SSTableManager
 }
 
-func NewDb(opts Options) LSM {
-	return LSM{
-		memtable:   make(map[string]Entry),
-		threshold:  opts.memtableThreshold,
-		sstables:   []string{},
-		dataDir:    opts.dataDirLocation,
-		sstableMgr: opts.sstableMgr,
+func NewDb(opts Options) *LSM {
+	return &LSM{
+		Memtable:   make(map[string]Entry),
+		threshold:  opts.MemtableThreshold,
+		Sstables:   []string{},
+		sstableMgr: opts.SstableMgr,
 	}
 }
 
-func (d *LSM) Put(entry Entry) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.memtable[entry.Key] = entry
-	if len(d.memtable) > d.threshold-1 {
-		return d.flushMemtableToDisk()
+func (db *LSM) Put(entry Entry) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	db.Memtable[entry.Key] = entry
+	if len(db.Memtable) > db.threshold-1 {
+		return db.flushMemtableToDisk()
 	}
 	return nil
 }
 
 func (db *LSM) flushMemtableToDisk() error {
-	filename := fmt.Sprintf("sstable_%d.sst", len(db.sstables))
+	filename := fmt.Sprintf("sstable_%d.sst", len(db.Sstables))
 	data := []string{}
-	for key, value := range db.memtable {
+	for key, value := range db.Memtable {
 		valueB64, err := serializeToBase64(value)
 		if err != nil {
 			fmt.Println("Error in serializing entry when writing to SSTable file", err)
@@ -71,22 +68,22 @@ func (db *LSM) flushMemtableToDisk() error {
 		fmt.Println("Error in writing sstable to disk!", err)
 		return err
 	}
-	db.memtable = make(map[string]Entry) // Clear the memtable
-	db.sstables = append(db.sstables, filename)
+	db.Memtable = make(map[string]Entry) // Clear the memtable
+	db.Sstables = append(db.Sstables, filename)
 	fmt.Printf("Flushed to disk: %s\n", filename)
 	return nil
 }
 
-func (d *LSM) Get(key string) (Entry, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	entry, exists := d.memtable[key]
+func (db *LSM) Get(key string) (Entry, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	entry, exists := db.Memtable[key]
 	if exists {
 		return entry, nil
 	}
 
-	for i := len(d.sstables) - 1; i >= 0; i-- {
-		entry, exists = d.searchInSSTable(i, key)
+	for i := len(db.Sstables) - 1; i >= 0; i-- {
+		entry, exists = db.searchInSSTable(i, key)
 		if exists {
 			return entry, nil
 		}

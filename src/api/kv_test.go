@@ -21,7 +21,7 @@ func TestKVController(t *testing.T) {
 		mockDb := new(MockDB)
 		mockDb.On("Put", mock.Anything).Return(nil)
 		logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
-		kvc := KVController{Logger: logger, db: mockDb}
+		kvc := KVController{Logger: logger, Db: mockDb}
 
 		url := "v1/kv"
 		reqBody := strings.NewReader("{\"key\":\"asdf\", \"value\":\"asdf\"}")
@@ -39,7 +39,7 @@ func TestKVController(t *testing.T) {
 		mockDb := new(MockDB)
 		mockDb.On("Put", mock.Anything).Return(nil)
 		logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
-		kvc := KVController{Logger: logger, db: mockDb}
+		kvc := KVController{Logger: logger, Db: mockDb}
 
 		url := "v1/kv"
 		reqBody := strings.NewReader("{\"key\":\"asdf\", \"value\":\"asdf\"")
@@ -57,7 +57,7 @@ func TestKVController(t *testing.T) {
 		mockDb := new(MockDB)
 		mockDb.On("Put", mock.Anything).Return(nil)
 		logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
-		kvc := KVController{Logger: logger, db: mockDb}
+		kvc := KVController{Logger: logger, Db: mockDb}
 
 		url := "v1/kv"
 		reqBody := strings.NewReader("")
@@ -77,7 +77,7 @@ func TestKVController(t *testing.T) {
 
 		logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 
-		kvc := KVController{Logger: logger, db: mockDb}
+		kvc := KVController{Logger: logger, Db: mockDb}
 
 		url := "v1/kv"
 		reqBody := strings.NewReader("{\"key\":\"asdf\", \"value\":\"asdf\"}")
@@ -99,7 +99,7 @@ func TestKVController(t *testing.T) {
 			Value: []byte("asdf"),
 		})
 		logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
-		kvc := KVController{Logger: logger, db: mockDb}
+		kvc := KVController{Logger: logger, Db: mockDb}
 		url := fmt.Sprintf("v1/kv/%s", key)
 		r, _ := http.NewRequest(http.MethodGet, url, nil)
 		vars := map[string]string{
@@ -130,7 +130,7 @@ func TestKVController(t *testing.T) {
 		mockDb := new(MockDB)
 		mockDb.On("Get", mock.Anything).Return(errors.New("An error occurred when trying to get the value"))
 		logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
-		kvc := KVController{Logger: logger, db: mockDb}
+		kvc := KVController{Logger: logger, Db: mockDb}
 		url := fmt.Sprintf("v1/kv/%s", key)
 		r, _ := http.NewRequest(http.MethodGet, url, nil)
 		vars := map[string]string{

@@ -196,3 +196,10 @@ Step 3: Add profiling with pprof for deeper analysis.
 Step 4: Perform load testing using external tools like wrk or ab.
 By combining benchmarking, profiling, and load testing, you can gain insights into the performance of your database's Get and Put operations under various conditions.
 ```
+
+# 8 October 2023
+
+- Created GET and PUT apis. Need to write tests for those
+- Healthcheck working
+- Dockerize the application
+- Performance benchmarking

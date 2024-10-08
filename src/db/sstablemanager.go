@@ -13,7 +13,7 @@ type SSTableManager interface {
 }
 
 type SSTableFileSystemManager struct {
-	dataDir string
+	DataDir string
 }
 
 func NewFileManager(dataDir string) (SSTableManager, error) {
@@ -27,12 +27,12 @@ func NewFileManager(dataDir string) (SSTableManager, error) {
 		fmt.Printf("Directory already exists: %s\n", dataDir)
 	}
 	return &SSTableFileSystemManager{
-		dataDir: dataDir,
+		DataDir: dataDir,
 	}, nil
 }
 
-func (ssm *SSTableFileSystemManager) WriteStrings(fileName string, data []string) error {
-	fullFilePath := filepath.Join(ssm.dataDir, fileName)
+func (ssm SSTableFileSystemManager) WriteStrings(fileName string, data []string) error {
+	fullFilePath := filepath.Join(ssm.DataDir, fileName)
 	file, err := os.Create(fullFilePath)
 	if err != nil {
 		fmt.Println("Error creating SSTable file:", err)
@@ -51,8 +51,8 @@ func (ssm *SSTableFileSystemManager) WriteStrings(fileName string, data []string
 	return nil
 }
 
-func (ssm *SSTableFileSystemManager) ReadAll(fileName string) ([]string, error) {
-	fullFilePath := filepath.Join(ssm.dataDir, fileName)
+func (ssm SSTableFileSystemManager) ReadAll(fileName string) ([]string, error) {
+	fullFilePath := filepath.Join(ssm.DataDir, fileName)
 	file, err := os.Open(fullFilePath)
 	if err != nil {
 		fmt.Println("Error opening SSTable file:", err)
