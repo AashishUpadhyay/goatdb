@@ -20,7 +20,12 @@ type Options struct {
 	sstableMgr        SSTableManager
 }
 
-type Db struct {
+type DB interface {
+	Put(entry Entry) error
+	Get(key string) (Entry, error)
+}
+
+type LSM struct {
 	memtable   map[string]Entry
 	sstables   []string
 	threshold  int
@@ -29,8 +34,8 @@ type Db struct {
 	sstableMgr SSTableManager
 }
 
-func NewDb(opts Options) Db {
-	return Db{
+func NewDb(opts Options) LSM {
+	return LSM{
 		memtable:   make(map[string]Entry),
 		threshold:  opts.memtableThreshold,
 		sstables:   []string{},
@@ -39,17 +44,17 @@ func NewDb(opts Options) Db {
 	}
 }
 
-func (d *Db) Put(entry Entry) error {
+func (d *LSM) Put(entry Entry) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.memtable[entry.Key] = entry
-	if len(d.memtable) > d.threshold - 1 {
-		return d.FlushMemtableToDisk()
+	if len(d.memtable) > d.threshold-1 {
+		return d.flushMemtableToDisk()
 	}
 	return nil
 }
 
-func (db *Db) FlushMemtableToDisk() error {
+func (db *LSM) flushMemtableToDisk() error {
 	filename := fmt.Sprintf("sstable_%d.sst", len(db.sstables))
 	data := []string{}
 	for key, value := range db.memtable {
@@ -72,7 +77,7 @@ func (db *Db) FlushMemtableToDisk() error {
 	return nil
 }
 
-func (d *Db) Get(key string) (Entry, error) {
+func (d *LSM) Get(key string) (Entry, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	entry, exists := d.memtable[key]
@@ -81,7 +86,7 @@ func (d *Db) Get(key string) (Entry, error) {
 	}
 
 	for i := len(d.sstables) - 1; i >= 0; i-- {
-		entry, exists = d.SearchInSSTable(i, key)
+		entry, exists = d.searchInSSTable(i, key)
 		if exists {
 			return entry, nil
 		}
@@ -90,7 +95,7 @@ func (d *Db) Get(key string) (Entry, error) {
 	return Entry{}, errors.New("entry not found")
 }
 
-func (db *Db) SearchInSSTable(idx int, key string) (Entry, bool) {
+func (db *LSM) searchInSSTable(idx int, key string) (Entry, bool) {
 	filename := fmt.Sprintf("sstable_%d.sst", idx)
 	fileData, err := db.sstableMgr.ReadAll(filename)
 	if err != nil {
