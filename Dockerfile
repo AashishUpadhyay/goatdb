@@ -1,19 +1,25 @@
-FROM golang:1.17-alpine AS builder
+FROM golang:1.20-alpine AS builder
 
 WORKDIR /app
 
 COPY go.mod go.sum ./
+
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o goatdb ./main.go
+
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
 FROM alpine:latest
 
-WORKDIR /app
+RUN apk --no-cache add ca-certificates
 
-COPY --from=builder /app/goatdb .
+WORKDIR /root/
+
+COPY --from=builder /app/main .
+
+COPY static/ ./static/
 
 EXPOSE 9999
 
-CMD ["./goatdb"]
+CMD ["./main"]
