@@ -63,6 +63,11 @@ func (kvc KVController) Get(w http.ResponseWriter, r *http.Request) {
 
 	// Test for errors in retrieving the entry
 	if err != nil {
+		if err.Error() == "entry not found" {
+			kvc.Logger.Printf("Failed to get the key %s. error : %v", keyName, err)
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
 		kvc.Logger.Printf("Failed to get the key %s. error : %v", keyName, err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return

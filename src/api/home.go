@@ -33,6 +33,10 @@ func Index() {
 
 	router := mux.NewRouter()
 	router.HandleFunc("/v1/hc", healthcheck)
+	router.HandleFunc("/", serveIndex)
+
+	// Add this line to serve static files
+	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	kvc := &KVController{
 		Logger: logger,
@@ -88,4 +92,8 @@ func healthcheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(returnValJson)
 	logger.Printf("request successful!")
+}
+
+func serveIndex(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "./static/index.html")
 }

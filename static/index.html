@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoatDB Key-Value Store</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-4xl font-bold text-center mb-8 text-gray-800">GoatDB Key-Value Store</h1>
+        
+        <div class="flex justify-center space-x-4 mb-8">
+            <button onclick="showSection('search')" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
+                Search Key
+            </button>
+            <button onclick="showSection('add')" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded">
+                Add New Key
+            </button>
+        </div>
+        
+        <div id="searchSection" class="hidden bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Search Key</h2>
+            <div class="mb-4">
+                <label for="searchKey" class="block text-gray-700 text-sm font-bold mb-2">Key:</label>
+                <input type="text" id="searchKey" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+            </div>
+            <button onclick="getKV()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+                Search
+            </button>
+        </div>
+
+        <div id="addSection" class="hidden bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Add New Key</h2>
+            <div class="mb-4">
+                <label for="addKey" class="block text-gray-700 text-sm font-bold mb-2">Key:</label>
+                <input type="text" id="addKey" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+            </div>
+            <div class="mb-4">
+                <label for="addValue" class="block text-gray-700 text-sm font-bold mb-2">Value:</label>
+                <input type="text" id="addValue" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+            </div>
+            <button onclick="putKV()" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+                Add Key-Value
+            </button>
+        </div>
+        
+        <div id="result" class="hidden bg-white shadow-md rounded px-8 py-4 mt-4 text-gray-700"></div>
+    </div>
+
+    <script>
+        function showSection(section) {
+            document.getElementById('searchSection').classList.add('hidden');
+            document.getElementById('addSection').classList.add('hidden');
+            document.getElementById(section + 'Section').classList.remove('hidden');
+            document.getElementById('result').classList.add('hidden');
+        }
+
+        async function putKV() {
+            const key = document.getElementById('addKey').value;
+            const value = document.getElementById('addValue').value;
+            
+            if (!key || !value) {
+                alert('Both key and value are required for PUT operation');
+                return;
+            }
+
+            try {
+                const response = await fetch('/v1/kv', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ key, value }),
+                });
+
+                const resultElement = document.getElementById('result');
+                resultElement.classList.remove('hidden');
+
+                if (response.ok) {
+                    resultElement.innerHTML = `<p class="text-green-600">Key "${key}" saved successfully!</p>`;
+                } else if (response.status === 500) {
+                    resultElement.innerHTML = `<p class="text-red-600">Unable to process the request. Check logs to find more information!</p>`;
+                } else {
+                    resultElement.innerHTML = `<p class="text-red-600">Error: ${response.statusText}</p>`;
+                }
+            } catch (error) {
+                const resultElement = document.getElementById('result');
+                resultElement.classList.remove('hidden');
+                resultElement.innerHTML = `<p class="text-red-600">Unable to process the request. Check logs to find more information!</p>`;
+            }
+        }
+
+        async function getKV() {
+            const key = document.getElementById('searchKey').value;
+            
+            if (!key) {
+                alert('Key is required for GET operation');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/v1/kv/${key}`);
+                
+                const resultElement = document.getElementById('result');
+                resultElement.classList.remove('hidden');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    resultElement.innerHTML = `<p class="text-green-600">Value for key "${key}": ${data.value}</p>`;
+                } else if (response.status === 404) {
+                    resultElement.innerHTML = `<p class="text-yellow-600">Key "${key}" not found!</p>`;
+                } else if (response.status === 500) {
+                    resultElement.innerHTML = `<p class="text-red-600">Unable to process the request. Check logs to find more information!</p>`;
+                } else {
+                    resultElement.innerHTML = `<p class="text-red-600">Error: ${response.statusText}</p>`;
+                }
+            } catch (error) {
+                const resultElement = document.getElementById('result');
+                resultElement.classList.remove('hidden');
+                resultElement.innerHTML = `<p class="text-red-600">Unable to process the request. Check logs to find more information!</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
