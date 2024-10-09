@@ -40,7 +40,9 @@ func Index() {
 			MemtableThreshold: 100000,
 			SstableMgr: db.SSTableFileSystemManager{
 				DataDir: "/Users/aashishupadhyay/Code/goatdb/.tmp/sstables/",
+				Logger:  logger,
 			},
+			Logger: logger,
 		}),
 	}
 
