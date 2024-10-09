@@ -3,6 +3,7 @@ package db
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -14,20 +15,23 @@ type SSTableManager interface {
 
 type SSTableFileSystemManager struct {
 	DataDir string
+	Logger  *log.Logger
 }
 
-func NewFileManager(dataDir string) (SSTableManager, error) {
+func NewFileManager(dataDir string, logger *log.Logger) (SSTableManager, error) {
 	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
 		err = os.MkdirAll(dataDir, os.ModePerm)
 		if err != nil {
+			logger.Printf("Error creating directory: %v", err)
 			return &SSTableFileSystemManager{}, fmt.Errorf("error creating directory: %w", err)
 		}
-		fmt.Printf("Directory created: %s\n", dataDir)
+		logger.Printf("Directory created: %s", dataDir)
 	} else {
-		fmt.Printf("Directory already exists: %s\n", dataDir)
+		logger.Printf("Directory already exists: %s", dataDir)
 	}
 	return &SSTableFileSystemManager{
 		DataDir: dataDir,
+		Logger:  logger,
 	}, nil
 }
 
@@ -35,7 +39,7 @@ func (ssm SSTableFileSystemManager) WriteStrings(fileName string, data []string)
 	fullFilePath := filepath.Join(ssm.DataDir, fileName)
 	file, err := os.Create(fullFilePath)
 	if err != nil {
-		fmt.Println("Error creating SSTable file:", err)
+		ssm.Logger.Printf("Error creating SSTable file %s: %v", fileName, err)
 		return err
 	}
 	defer file.Close()
@@ -43,11 +47,12 @@ func (ssm SSTableFileSystemManager) WriteStrings(fileName string, data []string)
 	for _, item := range data {
 		_, err = writer.WriteString(fmt.Sprintf("%s\n", item))
 		if err != nil {
-			fmt.Println("Error writing to SSTable file:", err)
+			ssm.Logger.Printf("Error writing to SSTable file %s: %v", fileName, err)
 			return err
 		}
 	}
 	writer.Flush()
+	ssm.Logger.Printf("Successfully wrote to SSTable file: %s", fileName)
 	return nil
 }
 
@@ -55,7 +60,7 @@ func (ssm SSTableFileSystemManager) ReadAll(fileName string) ([]string, error) {
 	fullFilePath := filepath.Join(ssm.DataDir, fileName)
 	file, err := os.Open(fullFilePath)
 	if err != nil {
-		fmt.Println("Error opening SSTable file:", err)
+		ssm.Logger.Printf("Error opening SSTable file %s: %v", fileName, err)
 		return []string{}, err
 	}
 	defer file.Close()
@@ -67,5 +72,6 @@ func (ssm SSTableFileSystemManager) ReadAll(fileName string) ([]string, error) {
 		returnValue = append(returnValue, line)
 	}
 
+	ssm.Logger.Printf("Successfully read SSTable file: %s", fileName)
 	return returnValue, nil
 }

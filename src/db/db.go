@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 )
@@ -17,6 +18,7 @@ type Entry struct {
 type Options struct {
 	MemtableThreshold int
 	SstableMgr        SSTableManager
+	Logger            *log.Logger
 }
 
 type DB interface {
@@ -30,6 +32,7 @@ type LSM struct {
 	threshold  int
 	mu         sync.RWMutex
 	sstableMgr SSTableManager
+	logger     *log.Logger
 }
 
 func NewDb(opts Options) *LSM {
@@ -38,6 +41,7 @@ func NewDb(opts Options) *LSM {
 		threshold:  opts.MemtableThreshold,
 		Sstables:   []string{},
 		sstableMgr: opts.SstableMgr,
+		logger:     opts.Logger,
 	}
 }
 
@@ -45,6 +49,7 @@ func (db *LSM) Put(entry Entry) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	db.Memtable[entry.Key] = entry
+	db.logger.Printf("Added entry with key: %s to memtable", entry.Key)
 	if len(db.Memtable) > db.threshold-1 {
 		return db.flushMemtableToDisk()
 	}
@@ -57,7 +62,7 @@ func (db *LSM) flushMemtableToDisk() error {
 	for key, value := range db.Memtable {
 		valueB64, err := serializeToBase64(value)
 		if err != nil {
-			fmt.Println("Error in serializing entry when writing to SSTable file", err)
+			db.logger.Printf("Error in serializing entry when writing to SSTable file: %v", err)
 			return err
 		}
 		data = append(data, fmt.Sprintf("%s,%s\n", key, valueB64))
@@ -65,12 +70,12 @@ func (db *LSM) flushMemtableToDisk() error {
 
 	err := db.sstableMgr.WriteStrings(filename, data)
 	if err != nil {
-		fmt.Println("Error in writing sstable to disk!", err)
+		db.logger.Printf("Error in writing sstable to disk: %v", err)
 		return err
 	}
 	db.Memtable = make(map[string]Entry) // Clear the memtable
 	db.Sstables = append(db.Sstables, filename)
-	fmt.Printf("Flushed to disk: %s\n", filename)
+	db.logger.Printf("Flushed to disk: %s", filename)
 	return nil
 }
 
@@ -79,16 +84,19 @@ func (db *LSM) Get(key string) (Entry, error) {
 	defer db.mu.Unlock()
 	entry, exists := db.Memtable[key]
 	if exists {
+		db.logger.Printf("Found entry with key: %s in memtable", key)
 		return entry, nil
 	}
 
 	for i := len(db.Sstables) - 1; i >= 0; i-- {
 		entry, exists = db.searchInSSTable(i, key)
 		if exists {
+			db.logger.Printf("Found entry with key: %s in SSTable %d", key, i)
 			return entry, nil
 		}
 	}
 
+	db.logger.Printf("Entry with key: %s not found", key)
 	return Entry{}, errors.New("entry not found")
 }
 
@@ -96,14 +104,14 @@ func (db *LSM) searchInSSTable(idx int, key string) (Entry, bool) {
 	filename := fmt.Sprintf("sstable_%d.sst", idx)
 	fileData, err := db.sstableMgr.ReadAll(filename)
 	if err != nil {
-		fmt.Println("Error in reading sstable!", err)
+		db.logger.Printf("Error in reading sstable %s: %v", filename, err)
 		return Entry{}, false
 	}
 	for _, fd := range fileData {
 		parts := strings.Split(fd, ",")
 		deseralizedEntry, err := deserializeFromBase64(parts[1])
 		if err != nil {
-			fmt.Println("Error deserializing value after reading from SSTable", err)
+			db.logger.Printf("Error deserializing value after reading from SSTable %s: %v", filename, err)
 			return Entry{}, false
 		}
 		if len(parts) == 2 && parts[0] == key {

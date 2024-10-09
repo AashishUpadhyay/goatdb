@@ -1,0 +1,7 @@
+POST http://localhost:9999/v1/kv
+Content-Type: application/json
+
+{
+    "key": "example-key",
+    "value": "This is an example value"
+}
