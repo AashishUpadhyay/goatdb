@@ -130,7 +130,7 @@ func TestConcurrency(t *testing.T) {
 
 func TestFlushMemtableToDisk(t *testing.T) {
 	logger := log.New(os.Stdout, "DB_TEST: ", log.Ldate|log.Ltime|log.Lshortfile)
-	
+
 	database := NewDb(Options{
 		MemtableThreshold: 3,
 		SstableMgr:        &MockSSTableManager{},
@@ -192,6 +192,14 @@ func (ffd *MockSSTableManager) WriteStrings(fileName string, data []string) erro
 
 func (ffd *MockSSTableManager) ReadAll(fileName string) ([]string, error) {
 	return sstablemockstore, nil
+}
+
+func (ffd *MockSSTableManager) ReadBlock(fileName string, offset uint64) ([]string, error) {
+	return nil, nil
+}
+
+func (ffd *MockSSTableManager) FindKey(fileName string, key string) (string, error) {
+	return "", nil
 }
 
 func TestSerializeDeserialize(t *testing.T) {

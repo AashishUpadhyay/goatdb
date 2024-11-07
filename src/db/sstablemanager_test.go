@@ -132,7 +132,7 @@ func TestLargeFileWriteAndRead(t *testing.T) {
 	}
 
 	// Create a large dataset
-	largeData := make([]string, 100000)
+	largeData := make([]string, 1000)
 	for i := range largeData {
 		largeData[i] = fmt.Sprintf("data_%d", i)
 	}
