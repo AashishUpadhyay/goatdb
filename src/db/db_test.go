@@ -3,6 +3,7 @@ package db
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -11,7 +12,7 @@ import (
 	"testing"
 )
 
-var sstablemockstore = []string{}
+var sstablemockstore = []Entry{}
 
 func TestPutAndGet(t *testing.T) {
 	// Create a logger for testing
@@ -185,21 +186,26 @@ func convertBytesToInt(buf []byte) int16 {
 type MockSSTableManager struct {
 }
 
-func (ffd *MockSSTableManager) WriteStrings(fileName string, data []string) error {
+func (ffd *MockSSTableManager) Write(fileName string, data []Entry) error {
 	sstablemockstore = append(sstablemockstore, data...)
 	return nil
 }
 
-func (ffd *MockSSTableManager) ReadAll(fileName string) ([]string, error) {
+func (ffd *MockSSTableManager) ReadAll(fileName string) ([]Entry, error) {
 	return sstablemockstore, nil
 }
 
-func (ffd *MockSSTableManager) ReadBlock(fileName string, offset uint64) ([]string, error) {
+func (ffd *MockSSTableManager) ReadBlock(fileName string, offset uint64) ([]Entry, error) {
 	return nil, nil
 }
 
-func (ffd *MockSSTableManager) FindKey(fileName string, key string) (string, error) {
-	return "", nil
+func (ffd *MockSSTableManager) FindKey(fileName string, key string) (Entry, error) {
+	for _, entry := range sstablemockstore {
+		if entry.Key == key {
+			return entry, nil
+		}
+	}
+	return Entry{}, errors.New("entry not found")
 }
 
 func TestSerializeDeserialize(t *testing.T) {
@@ -341,16 +347,16 @@ type ErrorMockSSTableManager struct {
 	readError  error
 }
 
-func (m *ErrorMockSSTableManager) WriteStrings(fileName string, data []string) error {
+func (m *ErrorMockSSTableManager) Write(fileName string, data []Entry) error {
 	if m.writeError != nil {
 		return m.writeError
 	}
-	return m.MockSSTableManager.WriteStrings(fileName, data)
+	return m.MockSSTableManager.Write(fileName, data)
 }
 
-func (m *ErrorMockSSTableManager) ReadAll(fileName string) ([]string, error) {
+func (m *ErrorMockSSTableManager) FindKey(fileName string, key string) (Entry, error) {
 	if m.readError != nil {
-		return nil, m.readError
+		return Entry{}, m.readError
 	}
-	return m.MockSSTableManager.ReadAll(fileName)
+	return m.MockSSTableManager.FindKey(fileName, key)
 }

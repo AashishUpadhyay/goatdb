@@ -1,6 +1,7 @@
 package db
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -25,10 +26,10 @@ func TestReadAfterWrite(t *testing.T) {
 		t.Fatalf("error creating file manager: %s", err)
 	}
 
-	err = ssm.WriteStrings(fileName, []string{
-		"ASDF",
-		"QWERTY",
-		"ZXCVB",
+	err = ssm.Write(fileName, []Entry{
+		{Key: "ASDF", Value: []byte("ASDF")},
+		{Key: "QWERTY", Value: []byte("QWERTY")},
+		{Key: "ZXCVB", Value: []byte("ZXCVB")},
 	})
 	if err != nil {
 		t.Fatalf("error writing strings: %s", err)
@@ -88,7 +89,9 @@ func TestWriteStringsError(t *testing.T) {
 	}
 
 	// Test writing to a non-existent subdirectory
-	err = ssm.WriteStrings("nonexistent/file.sst", []string{"test"})
+	err = ssm.Write("nonexistent/file.sst", []Entry{
+		{Key: "ASDF", Value: []byte("value1")},
+	})
 	if err == nil {
 		t.Fatalf("expected error when writing to non-existent subdirectory, but got nil")
 	}
@@ -132,13 +135,13 @@ func TestLargeFileWriteAndRead(t *testing.T) {
 	}
 
 	// Create a large dataset
-	largeData := make([]string, 1000)
+	largeData := make([]Entry, 100000)
 	for i := range largeData {
-		largeData[i] = fmt.Sprintf("data_%d", i)
+		largeData[i] = Entry{Key: fmt.Sprintf("data_%d", i), Value: []byte(fmt.Sprintf("value_%d", i))}
 	}
 
 	fileName := "large_file.sst"
-	err = ssm.WriteStrings(fileName, largeData)
+	err = ssm.Write(fileName, largeData)
 	if err != nil {
 		t.Fatalf("error writing large file: %s", err)
 	}
@@ -153,9 +156,83 @@ func TestLargeFileWriteAndRead(t *testing.T) {
 	}
 
 	for i, item := range readData {
-		if item != largeData[i] {
+		if item.Key != largeData[i].Key || !bytes.Equal(item.Value, largeData[i].Value) {
 			t.Fatalf("mismatch at index %d: expected %s, got %s", i, largeData[i], item)
 		}
+	}
+}
+
+func TestFileWriteAndFindKey(t *testing.T) {
+	currentTestDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("error getting current test directory: %s", err)
+	}
+	dataDir := filepath.Join(currentTestDir, ".testLargeFile")
+	defer deleteDirectoryIfExists(dataDir)
+
+	logger := log.New(os.Stdout, "SSTABLE_TEST: ", log.Ldate|log.Ltime|log.Lshortfile)
+
+	ssm, err := NewFileManager(dataDir, logger)
+	if err != nil {
+		t.Fatalf("error creating file manager: %s", err)
+	}
+
+	// Create a large dataset
+	largeData := make([]Entry, 1000)
+	for i := range largeData {
+		largeData[i] = Entry{Key: fmt.Sprintf("data_%d", i), Value: []byte(fmt.Sprintf("value_%d", i))}
+	}
+
+	fileName := "large_file.sst"
+	err = ssm.Write(fileName, largeData)
+	if err != nil {
+		t.Fatalf("error writing large file: %s", err)
+	}
+
+	returnedValue, err := ssm.FindKey(fileName, "data_100")
+	if err != nil {
+		t.Fatalf("error reading large file: %s", err)
+	}
+
+	if returnedValue.Key != "data_100" || !bytes.Equal(returnedValue.Value, []byte("value_100")) {
+		t.Fatalf("expected %s, got %s", "data_100", returnedValue)
+	}
+}
+
+func TestFileWriteAndFindKeyForNonExistingKey(t *testing.T) {
+	currentTestDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("error getting current test directory: %s", err)
+	}
+	dataDir := filepath.Join(currentTestDir, ".testLargeFile")
+	defer deleteDirectoryIfExists(dataDir)
+
+	logger := log.New(os.Stdout, "SSTABLE_TEST: ", log.Ldate|log.Ltime|log.Lshortfile)
+
+	ssm, err := NewFileManager(dataDir, logger)
+	if err != nil {
+		t.Fatalf("error creating file manager: %s", err)
+	}
+
+	// Create a large dataset
+	largeData := make([]Entry, 1000)
+	for i := range largeData {
+		largeData[i] = Entry{Key: fmt.Sprintf("data_%d", i), Value: []byte(fmt.Sprintf("value_%d", i))}
+	}
+
+	fileName := "large_file.sst"
+	err = ssm.Write(fileName, largeData)
+	if err != nil {
+		t.Fatalf("error writing large file: %s", err)
+	}
+
+	_, err = ssm.FindKey(fileName, "asdf")
+	if err == nil {
+		t.Fatalf("expecting error!")
+	}
+
+	if err.Error() != "key not found: asdf" {
+		t.Fatalf("expecting error: key not found: asdf, got: %s", err)
 	}
 }
 

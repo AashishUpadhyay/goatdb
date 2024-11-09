@@ -4,37 +4,48 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"hash/crc32"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 )
 
+type Entry struct {
+	Key   string
+	Value []byte
+}
+
 // FileHeader represents the fixed-size header at the beginning of each SSTable file
 type FileHeader struct {
-	Version           uint32
+	Version           int32
 	CreationTimestamp int64
-	EntryCount        uint32
+	EntryCount        int32
 	IndexOffset       uint64
-	BlockSize         uint32
+	BlockSize         int32
 }
 
 // BlockHeader represents the header for each data block
 type BlockHeader struct {
-	EntryCount      uint32
-	CompressedSize  uint32
+	EntryCount      int32
+	CompressedSize  int32
 	Checksum        uint32
 	NextBlockOffset uint64
 }
 
 // Index entry for faster lookups
 type IndexEntry struct {
-	KeyLength   uint32
-	Key         string
-	BlockOffset uint64
+	StartKeyLength int32
+	StartKey       string
+	EndKeyLength   int32
+	EndKey         string
+	BlockOffset    uint64
 }
 
 const (
@@ -44,10 +55,10 @@ const (
 
 // Modified interface to support the new format
 type SSTableManager interface {
-	WriteStrings(fileName string, data []string) error
-	ReadAll(fileName string) ([]string, error)
-	ReadBlock(fileName string, offset uint64) ([]string, error)
-	FindKey(fileName string, key string) (string, error)
+	Write(fileName string, data []Entry) error
+	ReadAll(fileName string) ([]Entry, error)
+	ReadBlock(fileName string, offset uint64) ([]Entry, error)
+	FindKey(fileName string, key string) (Entry, error)
 }
 
 type SSTableFileSystemManager struct {
@@ -72,7 +83,10 @@ func NewFileManager(dataDir string, logger *log.Logger) (SSTableManager, error) 
 	}, nil
 }
 
-func (ssm SSTableFileSystemManager) WriteStrings(fileName string, data []string) error {
+func (ssm SSTableFileSystemManager) Write(fileName string, data []Entry) error {
+	sort.Slice(data, func(i, j int) bool {
+		return data[i].Key < data[j].Key
+	})
 	fullFilePath := filepath.Join(ssm.DataDir, fileName)
 	file, err := os.Create(fullFilePath)
 	if err != nil {
@@ -85,7 +99,7 @@ func (ssm SSTableFileSystemManager) WriteStrings(fileName string, data []string)
 	header := FileHeader{
 		Version:           1,
 		CreationTimestamp: time.Now().Unix(),
-		EntryCount:        uint32(len(data)),
+		EntryCount:        int32(len(data)),
 		BlockSize:         4096, // 4KB blocks
 	}
 
@@ -98,11 +112,19 @@ func (ssm SSTableFileSystemManager) WriteStrings(fileName string, data []string)
 	currentOffset, _ := file.Seek(0, 1)
 
 	// Write data blocks
-	blockEntries := make([]string, 0, 100)
-	for _, item := range data {
-		blockEntries = append(blockEntries, item)
+	blockSize := 100
+	if blockSize > len(data) {
+		blockSize = len(data)
+	}
+	blockEntries := make([]string, 0, blockSize)
+	for idx, item := range data {
+		serializedEntry, err := serializeToBase64(item)
+		if err != nil {
+			return fmt.Errorf("failed to serialize entry: %w", err)
+		}
+		blockEntries = append(blockEntries, fmt.Sprintf("%s,%s", item.Key, serializedEntry))
 
-		if len(blockEntries) == 100 || item == data[len(data)-1] {
+		if len(blockEntries) == 100 || item.Key == data[len(data)-1].Key {
 			// Compress block data
 			var compressed bytes.Buffer
 			compressor := gzip.NewWriter(&compressed)
@@ -116,8 +138,8 @@ func (ssm SSTableFileSystemManager) WriteStrings(fileName string, data []string)
 
 			// Write block header
 			blockHeader := BlockHeader{
-				EntryCount:      uint32(len(blockEntries)),
-				CompressedSize:  uint32(compressed.Len()),
+				EntryCount:      int32(len(blockEntries)),
+				CompressedSize:  int32(compressed.Len()),
 				Checksum:        checksum,
 				NextBlockOffset: uint64(currentOffset + int64(compressed.Len()) + 20), // 20 is block header size
 			}
@@ -127,9 +149,11 @@ func (ssm SSTableFileSystemManager) WriteStrings(fileName string, data []string)
 
 			// Add first key of block to index
 			index = append(index, IndexEntry{
-				KeyLength:   uint32(len(blockEntries[0])),
-				Key:         blockEntries[0],
-				BlockOffset: uint64(currentOffset),
+				StartKeyLength: int32(len(data[idx-blockSize+1].Key)),
+				StartKey:       data[idx-blockSize+1].Key,
+				EndKeyLength:   int32(len(data[idx].Key)),
+				EndKey:         data[idx].Key,
+				BlockOffset:    uint64(currentOffset),
 			})
 
 			currentOffset = int64(blockHeader.NextBlockOffset)
@@ -148,12 +172,28 @@ func (ssm SSTableFileSystemManager) WriteStrings(fileName string, data []string)
 
 	// Then write each index entry
 	for _, entry := range index {
-		if err := binary.Write(file, binary.BigEndian, entry.KeyLength); err != nil {
+		indexOffset, _ := file.Seek(0, 1)
+		ssm.Logger.Printf("index offset start key len: %d", indexOffset)
+		if err := binary.Write(file, binary.BigEndian, entry.StartKeyLength); err != nil {
 			return fmt.Errorf("failed to write key length: %w", err)
 		}
-		if _, err := file.Write([]byte(entry.Key)); err != nil {
+		indexOffset, _ = file.Seek(0, 1)
+		ssm.Logger.Printf("index offset start key: %d", indexOffset)
+		if _, err := file.Write([]byte(entry.StartKey)); err != nil {
 			return fmt.Errorf("failed to write key: %w", err)
 		}
+		indexOffset, _ = file.Seek(0, 1)
+		ssm.Logger.Printf("index offset end key len: %d", indexOffset)
+		if err := binary.Write(file, binary.BigEndian, entry.EndKeyLength); err != nil {
+			return fmt.Errorf("failed to write key length: %w", err)
+		}
+		indexOffset, _ = file.Seek(0, 1)
+		ssm.Logger.Printf("index offset end key: %d", indexOffset)
+		if _, err := file.Write([]byte(entry.EndKey)); err != nil {
+			return fmt.Errorf("failed to write key: %w", err)
+		}
+		indexOffset, _ = file.Seek(0, 1)
+		ssm.Logger.Printf("index block offset: %d", indexOffset)
 		if err := binary.Write(file, binary.BigEndian, entry.BlockOffset); err != nil {
 			return fmt.Errorf("failed to write block offset: %w", err)
 		}
@@ -168,7 +208,7 @@ func (ssm SSTableFileSystemManager) WriteStrings(fileName string, data []string)
 	return nil
 }
 
-func (ssm SSTableFileSystemManager) ReadAll(fileName string) ([]string, error) {
+func (ssm SSTableFileSystemManager) ReadAll(fileName string) ([]Entry, error) {
 	fullFilePath := filepath.Join(ssm.DataDir, fileName)
 	file, err := os.Open(fullFilePath)
 	if err != nil {
@@ -183,7 +223,7 @@ func (ssm SSTableFileSystemManager) ReadAll(fileName string) ([]string, error) {
 		return nil, fmt.Errorf("failed to read header: %w", err)
 	}
 
-	var results []string
+	var results []Entry
 	currentOffset := int64(binary.Size(header))
 
 	// Read all blocks until we reach the index
@@ -192,7 +232,15 @@ func (ssm SSTableFileSystemManager) ReadAll(fileName string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		results = append(results, blockData...)
+
+		for _, entry := range blockData {
+			entryParts := strings.Split(entry, ",")
+			decodedEntry, err := deserializeFromBase64(entryParts[1])
+			if err != nil {
+				return nil, fmt.Errorf("failed to deserialize entry: %w", err)
+			}
+			results = append(results, decodedEntry)
+		}
 
 		// Move to next block
 		var blockHeader BlockHeader
@@ -205,7 +253,7 @@ func (ssm SSTableFileSystemManager) ReadAll(fileName string) ([]string, error) {
 	return results, nil
 }
 
-func (ssm SSTableFileSystemManager) ReadBlock(fileName string, offset uint64) ([]string, error) {
+func (ssm SSTableFileSystemManager) ReadBlock(fileName string, offset uint64) ([]Entry, error) {
 	fullFilePath := filepath.Join(ssm.DataDir, fileName)
 	file, err := os.Open(fullFilePath)
 	if err != nil {
@@ -214,7 +262,22 @@ func (ssm SSTableFileSystemManager) ReadBlock(fileName string, offset uint64) ([
 	}
 	defer file.Close()
 
-	return ssm.readBlockAt(file, offset)
+	blockData, err := ssm.readBlockAt(file, uint64(offset))
+	if err != nil {
+		return nil, err
+	}
+
+	var results []Entry
+
+	for _, entry := range blockData {
+		decodedEntry, err := deserializeFromBase64(entry)
+		if err != nil {
+			return nil, fmt.Errorf("failed to deserialize entry: %w", err)
+		}
+		results = append(results, decodedEntry)
+	}
+
+	return results, nil
 }
 
 // Helper function to read a single block
@@ -254,30 +317,31 @@ func (ssm SSTableFileSystemManager) readBlockAt(file *os.File, offset uint64) ([
 	return results, nil
 }
 
-func (ssm SSTableFileSystemManager) FindKey(fileName string, searchKey string) (string, error) {
+func (ssm SSTableFileSystemManager) FindKey(fileName string, searchKey string) (Entry, error) {
 	fullFilePath := filepath.Join(ssm.DataDir, fileName)
 	file, err := os.Open(fullFilePath)
 	if err != nil {
 		ssm.Logger.Printf("Error opening SSTable file %s: %v", fileName, err)
-		return "", err
+		return Entry{}, err
 	}
 	defer file.Close()
 
 	// Read file header
 	var header FileHeader
 	if err := binary.Read(file, binary.BigEndian, &header); err != nil {
-		return "", fmt.Errorf("failed to read header: %w", err)
+		return Entry{}, fmt.Errorf("failed to read header: %w", err)
 	}
 
 	// Jump to index and read index count
 	file.Seek(int64(header.IndexOffset), 0)
 	var indexCount uint32
 	if err := binary.Read(file, binary.BigEndian, &indexCount); err != nil {
-		return "", fmt.Errorf("failed to read index count: %w", err)
+		return Entry{}, fmt.Errorf("failed to read index count: %w", err)
 	}
 
+	ssm.Logger.Printf("index count = %d", indexCount)
 	// Binary search through the index
-	left, right := uint32(0), indexCount-1
+	left, right := int32(0), int32(indexCount-1)
 	var targetOffset uint64
 
 	for left <= right {
@@ -287,38 +351,57 @@ func (ssm SSTableFileSystemManager) FindKey(fileName string, searchKey string) (
 		entryPos := int64(header.IndexOffset) + 4 // Skip index count
 
 		// Skip to the middle entry
-		for i := uint32(0); i < mid; i++ {
+		for i := int32(0); i < mid; i++ {
 			// Read key length
-			var keyLen uint32
+			var startKeyLength uint32
 			file.Seek(entryPos, 0)
-			binary.Read(file, binary.BigEndian, &keyLen)
+			indexOffset, _ := file.Seek(0, 1)
+			ssm.Logger.Printf("read index offset start key len: %d", indexOffset)
+			binary.Read(file, binary.BigEndian, &startKeyLength)
+			file.Seek(entryPos+int64(4)+int64(startKeyLength), 0)
+			indexOffset, _ = file.Seek(0, 1)
+			ssm.Logger.Printf("read index offset end key len: %d", indexOffset)
+			var endKeyLength uint32
+			binary.Read(file, binary.BigEndian, &endKeyLength)
 			// Skip key and block offset
-			entryPos += int64(4 + keyLen + 8)
+			entryPos += int64(4 + startKeyLength + 4 + endKeyLength + 8)
 		}
 
 		// Read middle entry
-		var keyLen uint32
+		var startKeyLength uint32
 		file.Seek(entryPos, 0)
-		if err := binary.Read(file, binary.BigEndian, &keyLen); err != nil {
-			return "", fmt.Errorf("failed to read key length at index: %w", err)
+		if err := binary.Read(file, binary.BigEndian, &startKeyLength); err != nil {
+			return Entry{}, fmt.Errorf("failed to read key length at index: %w", err)
 		}
 
-		keyBytes := make([]byte, keyLen)
+		keyBytes := make([]byte, startKeyLength)
 		if _, err := file.Read(keyBytes); err != nil {
-			return "", fmt.Errorf("failed to read key at index: %w", err)
+			return Entry{}, fmt.Errorf("failed to read key at index: %w", err)
 		}
-		indexKey := string(keyBytes)
+		startIndexKey := string(keyBytes)
+		ssm.Logger.Printf("index key: %s", startIndexKey)
+
+		var endKeyLength uint32
+		if err := binary.Read(file, binary.BigEndian, &endKeyLength); err != nil {
+			return Entry{}, fmt.Errorf("failed to read key length at index: %w", err)
+		}
+		keyBytes = make([]byte, endKeyLength)
+		if _, err := file.Read(keyBytes); err != nil {
+			return Entry{}, fmt.Errorf("failed to read key at index: %w", err)
+		}
+		endIndexKey := string(keyBytes)
+		ssm.Logger.Printf("index key: %s", endIndexKey)
 
 		var blockOffset uint64
 		if err := binary.Read(file, binary.BigEndian, &blockOffset); err != nil {
-			return "", fmt.Errorf("failed to read block offset at index: %w", err)
+			return Entry{}, fmt.Errorf("failed to read block offset at index: %w", err)
 		}
 
 		// Compare and adjust search range
-		if indexKey == searchKey {
+		if startIndexKey == searchKey || endIndexKey == searchKey || (startIndexKey < searchKey && endIndexKey > searchKey) {
 			targetOffset = blockOffset
 			break
-		} else if indexKey < searchKey {
+		} else if endIndexKey < searchKey {
 			targetOffset = blockOffset // Remember this offset as it might contain our key
 			left = mid + 1
 		} else {
@@ -327,21 +410,22 @@ func (ssm SSTableFileSystemManager) FindKey(fileName string, searchKey string) (
 	}
 
 	if targetOffset == 0 {
-		return "", fmt.Errorf("key not found: %s", searchKey)
+		return Entry{}, fmt.Errorf("key not found: %s", searchKey)
 	}
 
 	// Read the target block
 	entries, err := ssm.readBlockAt(file, targetOffset)
 	if err != nil {
-		return "", fmt.Errorf("failed to read block: %w", err)
+		return Entry{}, fmt.Errorf("failed to read block: %w", err)
 	}
 
 	// Binary search within the block
 	blockLeft, blockRight := 0, len(entries)-1
 	for blockLeft <= blockRight {
 		blockMid := (blockLeft + blockRight) / 2
-		if entries[blockMid] == searchKey {
-			return entries[blockMid], nil
+		blockMidParts := strings.Split(entries[blockMid], ",")
+		if blockMidParts[0] == searchKey {
+			return deserializeFromBase64(blockMidParts[1])
 		} else if entries[blockMid] < searchKey {
 			blockLeft = blockMid + 1
 		} else {
@@ -349,5 +433,35 @@ func (ssm SSTableFileSystemManager) FindKey(fileName string, searchKey string) (
 		}
 	}
 
-	return "", fmt.Errorf("key not found: %s", searchKey)
+	return Entry{}, fmt.Errorf("key not found: %s", searchKey)
+}
+
+func serializeToBase64(entry Entry) (string, error) {
+	// Marshal the Entry struct to JSON
+	jsonBytes, err := json.Marshal(entry)
+	if err != nil {
+		return "", err
+	}
+
+	// Encode the JSON bytes to base64
+	base64Str := base64.StdEncoding.EncodeToString(jsonBytes)
+
+	return base64Str, nil
+}
+
+func deserializeFromBase64(base64Str string) (Entry, error) {
+	// Decode the base64-encoded string
+	jsonBytes, err := base64.StdEncoding.DecodeString(base64Str)
+	if err != nil {
+		return Entry{}, err
+	}
+
+	// Unmarshal the JSON bytes into an Entry struct
+	var entry Entry
+	err = json.Unmarshal(jsonBytes, &entry)
+	if err != nil {
+		return Entry{}, err
+	}
+
+	return entry, nil
 }

@@ -1,19 +1,11 @@
 package db
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"sync"
 )
-
-type Entry struct {
-	Key   string
-	Value []byte
-}
 
 type Options struct {
 	MemtableThreshold int
@@ -58,17 +50,12 @@ func (db *LSM) Put(entry Entry) error {
 
 func (db *LSM) flushMemtableToDisk() error {
 	filename := fmt.Sprintf("sstable_%d.sst", len(db.Sstables))
-	data := []string{}
-	for key, value := range db.Memtable {
-		valueB64, err := serializeToBase64(value)
-		if err != nil {
-			db.logger.Printf("Error in serializing entry when writing to SSTable file: %v", err)
-			return err
-		}
-		data = append(data, fmt.Sprintf("%s,%s\n", key, valueB64))
+	data := []Entry{}
+	for _, value := range db.Memtable {
+		data = append(data, value)
 	}
 
-	err := db.sstableMgr.WriteStrings(filename, data)
+	err := db.sstableMgr.Write(filename, data)
 	if err != nil {
 		db.logger.Printf("Error in writing sstable to disk: %v", err)
 		return err
@@ -102,51 +89,10 @@ func (db *LSM) Get(key string) (Entry, error) {
 
 func (db *LSM) searchInSSTable(idx int, key string) (Entry, bool) {
 	filename := fmt.Sprintf("sstable_%d.sst", idx)
-	fileData, err := db.sstableMgr.ReadAll(filename)
+	entry, err := db.sstableMgr.FindKey(filename, key)
 	if err != nil {
 		db.logger.Printf("Error in reading sstable %s: %v", filename, err)
 		return Entry{}, false
 	}
-	for _, fd := range fileData {
-		parts := strings.Split(fd, ",")
-		deseralizedEntry, err := deserializeFromBase64(parts[1])
-		if err != nil {
-			db.logger.Printf("Error deserializing value after reading from SSTable %s: %v", filename, err)
-			return Entry{}, false
-		}
-		if len(parts) == 2 && parts[0] == key {
-			return deseralizedEntry, true
-		}
-	}
-	return Entry{}, false
-}
-
-func serializeToBase64(entry Entry) (string, error) {
-	// Marshal the Entry struct to JSON
-	jsonBytes, err := json.Marshal(entry)
-	if err != nil {
-		return "", err
-	}
-
-	// Encode the JSON bytes to base64
-	base64Str := base64.StdEncoding.EncodeToString(jsonBytes)
-
-	return base64Str, nil
-}
-
-func deserializeFromBase64(base64Str string) (Entry, error) {
-	// Decode the base64-encoded string
-	jsonBytes, err := base64.StdEncoding.DecodeString(base64Str)
-	if err != nil {
-		return Entry{}, err
-	}
-
-	// Unmarshal the JSON bytes into an Entry struct
-	var entry Entry
-	err = json.Unmarshal(jsonBytes, &entry)
-	if err != nil {
-		return Entry{}, err
-	}
-
-	return entry, nil
+	return entry, true
 }
