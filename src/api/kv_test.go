@@ -146,10 +146,6 @@ func TestKVController(t *testing.T) {
 	})
 }
 
-func TestFail(t *testing.T) {
-	t.Errorf("This is a test failure")
-}
-
 type MockDB struct {
 	mock.Mock
 }
