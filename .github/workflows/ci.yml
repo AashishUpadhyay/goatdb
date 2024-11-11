@@ -1,43 +1,16 @@
-name: Go CI Pipeline
+name: Docker Image CI
 
 on:
   push:
-    branches: [main, master]
+    branches: ['main']
   pull_request:
-    branches: [main, master]
+    branches: ['main']
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-
-      - name: Build Docker image for CI
-        run: make build-ci
-
-      - name: Run tests in Docker
-        run: make test-ci
-
-      # Uncomment if you want to add coverage reporting
-      # - name: Run tests with coverage in Docker
-      #   run: docker-compose -f docker-compose.ci.yml run --rm goatdb go test -coverprofile=coverage.out ./...
-
-      # - name: Upload coverage reports to Codecov
-      #   uses: codecov/codecov-action@v3
-      #   with:
-      #     file: ./coverage.out
-      #     flags: unittests
-      #   env:
-      #     CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - uses: actions/checkout@v4
+      - name: Build the Docker image
+        run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
