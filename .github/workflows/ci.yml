@@ -1,39 +1,50 @@
-name: Docker Image CI
+name: Go CI Pipeline
 
 on:
   push:
-    branches: ['main']
+    branches: [main, master]
   pull_request:
-    branches: ['main']
+    branches: [main, master]
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
-      # Check out the code
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      # Install Docker and Docker Compose
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v2
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
 
-      - name: Install Docker Compose
-        run: |
-          sudo curl -L "https://github.com/docker/compose/releases/download/$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
-          docker-compose --version
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-      # Build and start services using Docker Compose
-      - name: Build and Run with Docker Compose
-        run: make build
+      - name: Install dependencies
+        run: go mod download
 
-      # Run tests in the Docker container
-      - name: Run tests inside Docker container
-        run: |
-          docker-compose exec goatdb make test
+      # Use the new build-app target instead of build to avoid Docker
+      - name: Build
+        run: make build-app
 
-      # Shut down the Docker Compose services
-      - name: Tear down Docker Compose
-        run: docker-compose down
+      - name: Run all tests
+        run: make test
+
+    #   - name: Run tests with coverage
+    #     run: make test-coverage
+
+    #   - name: Upload coverage reports to Codecov
+    #     uses: codecov/codecov-action@v3
+    #     with:
+    #       file: ./coverage.out
+    #       flags: unittests
+    #     env:
+    #       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
