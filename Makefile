@@ -70,10 +70,3 @@ test-coverage:
 # Run load tests specifically
 test-load:
 	go test -v ./src/api -run TestKVControllerLoadTest
-
-# Build and test in CI environment
-build-ci:
-	$(DOCKER_COMPOSE_CI) build
-
-test-ci:
-	$(DOCKER_COMPOSE_CI) run --rm goatdb go test -v ./...

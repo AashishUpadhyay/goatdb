@@ -11,7 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # Check out the code
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       # Install Docker and Docker Compose
       - name: Set up Docker
@@ -23,6 +25,15 @@ jobs:
           sudo chmod +x /usr/local/bin/docker-compose
           docker-compose --version
 
-      # Build the Docker image
-      - name: Build the Docker image
+      # Build and start services using Docker Compose
+      - name: Build and Run with Docker Compose
         run: make build
+
+      # Run tests in the Docker container
+      - name: Run tests inside Docker container
+        run: |
+          docker-compose exec goatdb make test
+
+      # Shut down the Docker Compose services
+      - name: Tear down Docker Compose
+        run: docker-compose down
