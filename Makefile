@@ -4,8 +4,14 @@ PROJECT_NAME := goatdb
 # Docker compose file
 DOCKER_COMPOSE_FILE := docker-compose.yml
 
+# Docker compose file for CI
+DOCKER_COMPOSE_FILE_CI := docker-compose.ci.yml
+
 # Docker compose command
 DOCKER_COMPOSE := docker-compose -f $(DOCKER_COMPOSE_FILE)
+
+# Docker compose command for CI
+DOCKER_COMPOSE_CI := docker-compose -f $(DOCKER_COMPOSE_FILE_CI)
 
 .PHONY: build build-app up down clean rebuild logs ps test test-api test-db test-coverage test-load
 
@@ -67,7 +73,7 @@ test-load:
 
 # Build and test in CI environment
 build-ci:
-	$(DOCKER_COMPOSE) -f docker-compose.ci.yml build
+	$(DOCKER_COMPOSE_CI) build
 
 test-ci:
-	$(DOCKER_COMPOSE) -f docker-compose.ci.yml run --rm goatdb go test -v ./...
+	$(DOCKER_COMPOSE_CI) run --rm goatdb go test -v ./...
