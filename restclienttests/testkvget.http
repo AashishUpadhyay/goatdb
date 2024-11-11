@@ -1,1 +1,1 @@
-GET http://localhost:9999/v1/kv/example-key
+GET http://localhost:9999/v1/kv/key-3-39

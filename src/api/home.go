@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/AashishUpadhyay/goatdb/src/db"
@@ -16,16 +17,45 @@ import (
 const version = "1.0.0"
 
 type config struct {
-	port int
-	env  string
+	port              int
+	env               string
+	memtableThreshold int
+	dataDir           string
 }
 
 var cfg config
 
 func Index() {
+	// Set default from env var or fallback
+	defaultEnv := os.Getenv("ENV")
+	env := "dev" // default value
+	if defaultEnv != "" {
+		defaultEnv = env
+	}
 
-	flag.IntVar(&cfg.port, "port", 9999, "API Server Port")
-	flag.StringVar(&cfg.env, "env", "dev", "Environment")
+	defaultDataDir := os.Getenv("DATA_DIR")
+	if defaultDataDir == "" {
+		defaultDataDir = "app/sstables/"
+	}
+
+	defaultMemtableThreshold := os.Getenv("MEMTABLE_THRESHOLD")
+	if defaultMemtableThreshold == "" {
+		defaultMemtableThreshold = "100"
+	}
+
+	defaultPort := os.Getenv("PORT")
+	if defaultPort == "" {
+		defaultPort = "9999"
+	}
+
+	flag.StringVar(&cfg.env, "env", defaultEnv, "Environment")
+	flag.StringVar(&cfg.dataDir, "data-dir", defaultDataDir, "Data directory for SSTable storage")
+
+	memThreshold, _ := strconv.Atoi(defaultMemtableThreshold)
+	flag.IntVar(&cfg.memtableThreshold, "memtable-threshold", memThreshold, "Memtable threshold")
+
+	portNum, _ := strconv.Atoi(defaultPort)
+	flag.IntVar(&cfg.port, "port", portNum, "API Server Port")
 	flag.Parse()
 
 	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
@@ -41,9 +71,9 @@ func Index() {
 	kvc := &KVController{
 		Logger: logger,
 		Db: db.NewDb(db.Options{
-			MemtableThreshold: 100000,
+			MemtableThreshold: cfg.memtableThreshold,
 			SstableMgr: db.SSTableFileSystemManager{
-				DataDir: "/Users/aashishupadhyay/Code/goatdb/.tmp/sstables/",
+				DataDir: cfg.dataDir,
 				Logger:  logger,
 			},
 			Logger: logger,
