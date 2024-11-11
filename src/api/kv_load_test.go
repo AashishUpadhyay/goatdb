@@ -12,6 +12,9 @@ import (
 
 func TestKVControllerLoadTest(t *testing.T) {
 	//go test -v ./src/api -run TestKVControllerLoadTest
+	if testing.Short() {
+		t.Skip("Skipping this test in short mode")
+	}
 	baseURL := "http://localhost:9999"
 	concurrentUsers := 50
 	requestsPerUser := 100

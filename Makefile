@@ -46,7 +46,7 @@ all: build up
 
 # Run all tests
 test:
-	go test -v ./...
+	go test -v -short  ./...
 
 # Run only API tests
 test-api:
@@ -58,7 +58,7 @@ test-db:
 
 # Run tests with coverage
 test-coverage:
-	go test -coverprofile=coverage.out ./...
+	go test -short -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
 # Run load tests specifically
