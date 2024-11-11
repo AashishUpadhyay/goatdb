@@ -24,3 +24,5 @@ go.work
 .appdata/
 .tmp/
 **/goatdb
+coverage.out
+coverage.html
