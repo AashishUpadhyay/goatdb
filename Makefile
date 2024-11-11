@@ -7,7 +7,7 @@ DOCKER_COMPOSE_FILE := docker-compose.yml
 # Docker compose command
 DOCKER_COMPOSE := docker-compose -f $(DOCKER_COMPOSE_FILE)
 
-.PHONY: build up down clean rebuild logs ps
+.PHONY: build up down clean rebuild logs ps test test-api test-db test-coverage test-load
 
 # Build the Docker images
 build:
@@ -39,3 +39,24 @@ ps:
 
 # Default target
 all: build up
+
+# Run all tests
+test:
+	go test -v ./...
+
+# Run only API tests
+test-api:
+	go test -v ./src/api
+
+# Run only DB tests
+test-db:
+	go test -v ./src/db
+
+# Run tests with coverage
+test-coverage:
+	go test -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+
+# Run load tests specifically
+test-load:
+	go test -v ./src/api -run TestKVControllerLoadTest
