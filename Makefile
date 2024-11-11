@@ -7,11 +7,15 @@ DOCKER_COMPOSE_FILE := docker-compose.yml
 # Docker compose command
 DOCKER_COMPOSE := docker-compose -f $(DOCKER_COMPOSE_FILE)
 
-.PHONY: build up down clean rebuild logs ps test test-api test-db test-coverage test-load
+.PHONY: build build-app up down clean rebuild logs ps test test-api test-db test-coverage test-load
 
 # Build the Docker images
 build:
 	$(DOCKER_COMPOSE) build
+
+# Build the Go application (for CI)
+build-app:
+	go build -v ./...
 
 # Start the Docker containers
 up:
@@ -60,3 +64,6 @@ test-coverage:
 # Run load tests specifically
 test-load:
 	go test -v ./src/api -run TestKVControllerLoadTest
+
+# CI pipeline commands
+ci: build-app test test-coverage
