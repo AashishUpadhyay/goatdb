@@ -65,5 +65,9 @@ test-coverage:
 test-load:
 	go test -v ./src/api -run TestKVControllerLoadTest
 
-# CI pipeline commands
-ci: build-app test test-coverage
+# Build and test in CI environment
+build-ci:
+	$(DOCKER_COMPOSE) -f docker-compose.ci.yml build
+
+test-ci:
+	$(DOCKER_COMPOSE) -f docker-compose.ci.yml run --rm goatdb go test -v ./...

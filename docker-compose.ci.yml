@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  goatdb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - ENV=test
+      - DATA_DIR=/app/sstables/
+      - MEMTABLE_THRESHOLD=100
+    volumes:
+      - .:/app
+    command: ["tail", "-f", "/dev/null"]  # Keep container running for tests
+    networks:
+      - goatdb_network
+
+networks:
+  goatdb_network:
+    driver: bridge 
