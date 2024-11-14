@@ -36,13 +36,9 @@ type LSM struct {
 }
 
 func NewDb(opts Options) (*LSM, error) {
-	walManager, err := wal.NewManager(opts.WalDir, opts.WalConfig.SegmentSize)
+	walManager, err := wal.NewManager(opts.WalDir, opts.WalConfig.SegmentSize, opts.WalConfig.RetentionPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create WAL manager: %w", err)
-	}
-
-	if opts.WalConfig.RetentionPolicy != nil {
-		walManager.SetRetentionPolicy(opts.WalConfig.RetentionPolicy)
 	}
 
 	db := &LSM{

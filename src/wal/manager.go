@@ -24,14 +24,15 @@ type Manager struct {
 	retentionPolicy *RetentionPolicy
 }
 
-func NewManager(dir string, maxSegSize int64) (*Manager, error) {
+func NewManager(dir string, maxSegSize int64, retentionPolicy *RetentionPolicy) (*Manager, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, &WalError{Op: "create_dir", Err: err}
 	}
 
 	m := &Manager{
-		dir:        dir,
-		maxSegSize: maxSegSize,
+		dir:             dir,
+		maxSegSize:      maxSegSize,
+		retentionPolicy: retentionPolicy,
 	}
 
 	if err := m.recover(); err != nil {
