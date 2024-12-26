@@ -11,16 +11,20 @@ import (
 	"time"
 
 	"github.com/AashishUpadhyay/goatdb/src/db"
+	"github.com/AashishUpadhyay/goatdb/src/wal"
 	"github.com/gorilla/mux"
 )
 
 const version = "1.0.0"
 
 type config struct {
-	port              int
-	env               string
-	memtableThreshold int
-	dataDir           string
+	port               int
+	env                string
+	memtableThreshold  int
+	dataDir            string
+	walDir             string
+	walSegmentSize     int
+	walRetentionPolicy int
 }
 
 var cfg config
@@ -48,8 +52,30 @@ func Index() {
 		defaultPort = "9999"
 	}
 
+	defaultWalDir := os.Getenv("WAL_DIR")
+	if defaultWalDir == "" {
+		defaultWalDir = "app/wal/"
+	}
+
+	defaultWalSegmentSize := os.Getenv("WAL_SEGMENT_SIZE")
+	if defaultWalSegmentSize == "" {
+		defaultWalSegmentSize = "1024"
+	}
+
+	defaultWalRetentionPolicy := os.Getenv("WAL_RETENTION_POLICY")
+	if defaultWalRetentionPolicy == "" {
+		defaultWalRetentionPolicy = "10"
+	}
+
 	flag.StringVar(&cfg.env, "env", defaultEnv, "Environment")
 	flag.StringVar(&cfg.dataDir, "data-dir", defaultDataDir, "Data directory for SSTable storage")
+	flag.StringVar(&cfg.walDir, "wal-dir", defaultWalDir, "Data directory for WAL storage")
+
+	walSegmentSize, _ := strconv.Atoi(defaultWalSegmentSize)
+	flag.IntVar(&cfg.walSegmentSize, "wal-segment-size", walSegmentSize, "WAL segment size")
+
+	walRetentionPolicy, _ := strconv.Atoi(defaultWalRetentionPolicy)
+	flag.IntVar(&cfg.walRetentionPolicy, "wal-retention-policy", walRetentionPolicy, "WAL retention policy")
 
 	memThreshold, _ := strconv.Atoi(defaultMemtableThreshold)
 	flag.IntVar(&cfg.memtableThreshold, "memtable-threshold", memThreshold, "Memtable threshold")
@@ -68,16 +94,28 @@ func Index() {
 	// Add this line to serve static files
 	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
+	walMgr, err := wal.NewManager(cfg.walDir, int64(cfg.walSegmentSize), &wal.RetentionPolicy{MaxSegments: cfg.walRetentionPolicy})
+	if err != nil {
+		logger.Fatal(err)
+	}
+
+	db, err := db.NewDb(db.Options{
+		MemtableThreshold: cfg.memtableThreshold,
+		SstableMgr: db.SSTableFileSystemManager{
+			DataDir: cfg.dataDir,
+			Logger:  logger,
+		},
+		Logger: logger,
+		WalMgr: walMgr,
+	})
+
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	kvc := &KVController{
 		Logger: logger,
-		Db: db.NewDb(db.Options{
-			MemtableThreshold: cfg.memtableThreshold,
-			SstableMgr: db.SSTableFileSystemManager{
-				DataDir: cfg.dataDir,
-				Logger:  logger,
-			},
-			Logger: logger,
-		}),
+		Db:     db,
 	}
 
 	kvc.RegisterRoutes(router)
@@ -91,7 +129,7 @@ func Index() {
 	}
 
 	logger.Printf("starting %s server on %s", cfg.env, addr)
-	err := srv.ListenAndServe()
+	err = srv.ListenAndServe()
 	if err != nil {
 		logger.Fatal(err)
 	}

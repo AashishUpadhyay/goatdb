@@ -15,24 +15,32 @@ type RetentionPolicy struct {
 	MaxAge      time.Duration // Maximum age of segments
 }
 
-type Manager struct {
-	dir             string
-	maxSegSize      int64
+type WalManager struct {
+	Dir             string
+	MaxSegSize      int64
 	activeSegment   *segment
 	segments        []*segment
 	mu              sync.RWMutex
-	retentionPolicy *RetentionPolicy
+	RetentionPolicy *RetentionPolicy
 }
 
-func NewManager(dir string, maxSegSize int64, retentionPolicy *RetentionPolicy) (*Manager, error) {
+type IWalManager interface {
+	Append(entry *Entry) error
+	ReadAll() ([]*Entry, error)
+	Close() error
+	RemoveOldSegments() error
+	ApplyRetentionPolicy() error
+}
+
+func NewManager(dir string, maxSegSize int64, retentionPolicy *RetentionPolicy) (*WalManager, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, &WalError{Op: "create_dir", Err: err}
 	}
 
-	m := &Manager{
-		dir:             dir,
-		maxSegSize:      maxSegSize,
-		retentionPolicy: retentionPolicy,
+	m := &WalManager{
+		Dir:             dir,
+		MaxSegSize:      maxSegSize,
+		RetentionPolicy: retentionPolicy,
 	}
 
 	if err := m.recover(); err != nil {
@@ -42,48 +50,48 @@ func NewManager(dir string, maxSegSize int64, retentionPolicy *RetentionPolicy) 
 	return m, nil
 }
 
-func (m *Manager) Append(entry *Entry) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (wm *WalManager) Append(entry *Entry) error {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
 
-	if m.activeSegment == nil || m.activeSegment.isFull() {
-		if err := m.rotateSegment(); err != nil {
+	if wm.activeSegment == nil || wm.activeSegment.isFull() {
+		if err := wm.rotateSegment(); err != nil {
 			return err
 		}
 	}
 
-	if err := m.activeSegment.append(entry); err != nil {
+	if err := wm.activeSegment.append(entry); err != nil {
 		return err
 	}
 
-	return m.activeSegment.sync()
+	return wm.activeSegment.sync()
 }
 
-func (m *Manager) rotateSegment() error {
-	if m.activeSegment != nil {
-		if err := m.activeSegment.sync(); err != nil {
+func (wm *WalManager) rotateSegment() error {
+	if wm.activeSegment != nil {
+		if err := wm.activeSegment.sync(); err != nil {
 			return err
 		}
 	}
 
 	segmentName := fmt.Sprintf("%020d.wal", time.Now().UnixNano())
-	path := filepath.Join(m.dir, segmentName)
+	path := filepath.Join(wm.Dir, segmentName)
 
-	segment, err := openSegment(path, m.maxSegSize)
+	segment, err := openSegment(path, wm.MaxSegSize)
 	if err != nil {
 		return err
 	}
 
-	if m.activeSegment != nil {
-		m.segments = append(m.segments, m.activeSegment)
+	if wm.activeSegment != nil {
+		wm.segments = append(wm.segments, wm.activeSegment)
 	}
-	m.activeSegment = segment
+	wm.activeSegment = segment
 
 	return nil
 }
 
-func (m *Manager) recover() error {
-	files, err := os.ReadDir(m.dir)
+func (wm *WalManager) recover() error {
+	files, err := os.ReadDir(wm.Dir)
 	if err != nil {
 		return &WalError{Op: "read_dir", Err: err}
 	}
@@ -98,32 +106,32 @@ func (m *Manager) recover() error {
 	sort.Strings(segmentFiles)
 
 	for _, filename := range segmentFiles {
-		path := filepath.Join(m.dir, filename)
-		segment, err := openSegment(path, m.maxSegSize)
+		path := filepath.Join(wm.Dir, filename)
+		segment, err := openSegment(path, wm.MaxSegSize)
 		if err != nil {
 			return err
 		}
-		m.segments = append(m.segments, segment)
+		wm.segments = append(wm.segments, segment)
 	}
 
-	if len(m.segments) > 0 {
-		m.activeSegment = m.segments[len(m.segments)-1]
-		m.segments = m.segments[:len(m.segments)-1]
+	if len(wm.segments) > 0 {
+		wm.activeSegment = wm.segments[len(wm.segments)-1]
+		wm.segments = wm.segments[:len(wm.segments)-1]
 	} else {
-		return m.rotateSegment()
+		return wm.rotateSegment()
 	}
 
 	return nil
 }
 
-func (m *Manager) ReadAll() ([]*Entry, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+func (wm *WalManager) ReadAll() ([]*Entry, error) {
+	wm.mu.RLock()
+	defer wm.mu.RUnlock()
 
 	var allEntries []*Entry
 
 	// Read from all inactive segments
-	for _, segment := range m.segments {
+	for _, segment := range wm.segments {
 		entries, err := segment.read()
 		if err != nil {
 			return nil, err
@@ -132,8 +140,8 @@ func (m *Manager) ReadAll() ([]*Entry, error) {
 	}
 
 	// Read from active segment
-	if m.activeSegment != nil {
-		entries, err := m.activeSegment.read()
+	if wm.activeSegment != nil {
+		entries, err := wm.activeSegment.read()
 		if err != nil {
 			return nil, err
 		}
@@ -143,30 +151,30 @@ func (m *Manager) ReadAll() ([]*Entry, error) {
 	return allEntries, nil
 }
 
-func (m *Manager) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (wm *WalManager) Close() error {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
 
-	for _, segment := range m.segments {
+	for _, segment := range wm.segments {
 		if err := segment.close(); err != nil {
 			return err
 		}
 	}
 
-	if m.activeSegment != nil {
-		return m.activeSegment.close()
+	if wm.activeSegment != nil {
+		return wm.activeSegment.close()
 	}
 
 	return nil
 }
 
 // RemoveOldSegments removes all segments except the active one
-func (m *Manager) RemoveOldSegments() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (wm *WalManager) RemoveOldSegments() error {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
 
 	// Close and remove old segments
-	for _, seg := range m.segments {
+	for _, seg := range wm.segments {
 		segPath := seg.file.Name()
 
 		// Close segment
@@ -181,44 +189,44 @@ func (m *Manager) RemoveOldSegments() error {
 	}
 
 	// Clear segments slice
-	m.segments = nil
+	wm.segments = nil
 	return nil
 }
 
-func (m *Manager) ApplyRetentionPolicy() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (wm *WalManager) ApplyRetentionPolicy() error {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
 
-	if m.retentionPolicy == nil {
+	if wm.RetentionPolicy == nil {
 		return nil
 	}
 
 	// Remove segments based on count
-	if m.retentionPolicy.MaxSegments > 0 {
-		for len(m.segments) > m.retentionPolicy.MaxSegments {
-			oldestSeg := m.segments[0]
-			if err := m.removeSegment(oldestSeg); err != nil {
+	if wm.RetentionPolicy.MaxSegments > 0 {
+		for len(wm.segments) > wm.RetentionPolicy.MaxSegments {
+			oldestSeg := wm.segments[0]
+			if err := wm.removeSegment(oldestSeg); err != nil {
 				return err
 			}
-			m.segments = m.segments[1:]
+			wm.segments = wm.segments[1:]
 		}
 	}
 
 	// Remove segments based on age
-	if m.retentionPolicy.MaxAge > 0 {
-		cutoff := time.Now().Add(-m.retentionPolicy.MaxAge)
-		for len(m.segments) > 0 {
-			oldestSeg := m.segments[0]
+	if wm.RetentionPolicy.MaxAge > 0 {
+		cutoff := time.Now().Add(-wm.RetentionPolicy.MaxAge)
+		for len(wm.segments) > 0 {
+			oldestSeg := wm.segments[0]
 			info, err := oldestSeg.file.Stat()
 			if err != nil {
 				return &WalError{Op: "stat_segment", Err: err}
 			}
 
 			if info.ModTime().Before(cutoff) {
-				if err := m.removeSegment(oldestSeg); err != nil {
+				if err := wm.removeSegment(oldestSeg); err != nil {
 					return err
 				}
-				m.segments = m.segments[1:]
+				wm.segments = wm.segments[1:]
 			} else {
 				break
 			}
@@ -228,7 +236,7 @@ func (m *Manager) ApplyRetentionPolicy() error {
 	return nil
 }
 
-func (m *Manager) removeSegment(seg *segment) error {
+func (m *WalManager) removeSegment(seg *segment) error {
 	segPath := seg.file.Name()
 
 	if err := seg.close(); err != nil {

@@ -13,11 +13,7 @@ type Options struct {
 	MemtableThreshold int
 	SstableMgr        SSTableManager
 	Logger            *log.Logger
-	WalDir            string
-	WalConfig         struct {
-		SegmentSize    int64
-		RetentionPolicy *wal.RetentionPolicy
-	}
+	WalMgr            wal.IWalManager
 }
 
 type DB interface {
@@ -32,22 +28,17 @@ type LSM struct {
 	mu         sync.RWMutex
 	sstableMgr SSTableManager
 	logger     *log.Logger
-	walManager *wal.Manager
+	walManager wal.IWalManager
 }
 
 func NewDb(opts Options) (*LSM, error) {
-	walManager, err := wal.NewManager(opts.WalDir, opts.WalConfig.SegmentSize, opts.WalConfig.RetentionPolicy)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create WAL manager: %w", err)
-	}
-
 	db := &LSM{
 		Memtable:   make(map[string]Entry),
 		threshold:  opts.MemtableThreshold,
 		Sstables:   []string{},
 		sstableMgr: opts.SstableMgr,
 		logger:     opts.Logger,
-		walManager: walManager,
+		walManager: opts.WalMgr,
 	}
 
 	if err := db.recoverFromWAL(); err != nil {
