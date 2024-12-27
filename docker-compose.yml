@@ -12,6 +12,9 @@ services:
       - DATA_DIR=/app/sstables/
       - MEMTABLE_THRESHOLD=100
       - PORT=9999
+      - WAL_DIR=/app/wal/
+      - WAL_SEGMENT_SIZE=2097152
+      - MAX_WAL_SEGMENTS=0
     volumes:
       - ./.tmp/sstables:/app/sstables
     command: ["./main"]

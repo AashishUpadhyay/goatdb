@@ -18,13 +18,13 @@ import (
 const version = "1.0.0"
 
 type config struct {
-	port               int
-	env                string
-	memtableThreshold  int
-	dataDir            string
-	walDir             string
-	walSegmentSize     int
-	walRetentionPolicy int
+	port              int
+	env               string
+	memtableThreshold int
+	dataDir           string
+	walDir            string
+	walSegmentSize    int
+	maxWalSegments    int
 }
 
 var cfg config
@@ -62,9 +62,9 @@ func Index() {
 		defaultWalSegmentSize = "1024"
 	}
 
-	defaultWalRetentionPolicy := os.Getenv("WAL_RETENTION_POLICY")
-	if defaultWalRetentionPolicy == "" {
-		defaultWalRetentionPolicy = "10"
+	defaultMaxWalSegments := os.Getenv("MAX_WAL_SEGMENTS")
+	if defaultMaxWalSegments == "" {
+		defaultMaxWalSegments = "10"
 	}
 
 	flag.StringVar(&cfg.env, "env", defaultEnv, "Environment")
@@ -74,8 +74,8 @@ func Index() {
 	walSegmentSize, _ := strconv.Atoi(defaultWalSegmentSize)
 	flag.IntVar(&cfg.walSegmentSize, "wal-segment-size", walSegmentSize, "WAL segment size")
 
-	walRetentionPolicy, _ := strconv.Atoi(defaultWalRetentionPolicy)
-	flag.IntVar(&cfg.walRetentionPolicy, "wal-retention-policy", walRetentionPolicy, "WAL retention policy")
+	maxWalSegments, _ := strconv.Atoi(defaultMaxWalSegments)
+	flag.IntVar(&cfg.maxWalSegments, "max-wal-segments", maxWalSegments, "Max WAL segments")
 
 	memThreshold, _ := strconv.Atoi(defaultMemtableThreshold)
 	flag.IntVar(&cfg.memtableThreshold, "memtable-threshold", memThreshold, "Memtable threshold")
@@ -94,7 +94,7 @@ func Index() {
 	// Add this line to serve static files
 	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
-	walMgr, err := wal.NewManager(cfg.walDir, int64(cfg.walSegmentSize), &wal.RetentionPolicy{MaxSegments: cfg.walRetentionPolicy})
+	walMgr, err := wal.NewManager(cfg.walDir, int64(cfg.walSegmentSize), &wal.RetentionPolicy{MaxSegments: cfg.maxWalSegments})
 	if err != nil {
 		logger.Fatal(err)
 	}
