@@ -2,6 +2,7 @@ package wal
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -303,4 +304,68 @@ func TestManager_Close(t *testing.T) {
 			t.Errorf("expected successful second close, got error: %v", err)
 		}
 	})
+}
+
+func TestManager_MaxSegmentsApplyRetentionPolicy(t *testing.T) {
+
+	tests := []struct {
+		name        string
+		maxSegments int
+		maxAge      time.Duration
+	}{
+		{name: "apply max segments retention policy", maxSegments: 1, maxAge: 1 * time.Hour},
+		{name: "apply max age retention policy", maxSegments: 100, maxAge: 1 * time.Hour},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			currentTestDir, _ := os.Getwd()
+			walDir := filepath.Join(currentTestDir, ".wal")
+			defer deleteDirectoryIfExists(walDir)
+
+			walManager, err := NewManager(walDir, 100, &RetentionPolicy{
+				MaxSegments: test.maxSegments,
+				MaxAge:      test.maxAge,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer walManager.Close()
+
+			walManager.Append(&Entry{Type: EntryPut, Key: []byte("k1"), Value: []byte("v1")})
+			walManager.Append(&Entry{Type: EntryPut, Key: []byte("k2"), Value: []byte("v2")})
+			walManager.Append(&Entry{Type: EntryPut, Key: []byte("k3"), Value: []byte("v3")})
+			walManager.Append(&Entry{Type: EntryPut, Key: []byte("k4"), Value: []byte("v4")})
+			walManager.Append(&Entry{Type: EntryPut, Key: []byte("k5"), Value: []byte("v5")})
+			walManager.Append(&Entry{Type: EntryPut, Key: []byte("k6"), Value: []byte("v6")})
+			walManager.Append(&Entry{Type: EntryPut, Key: []byte("k7"), Value: []byte("v7")})
+			walManager.Append(&Entry{Type: EntryPut, Key: []byte("k8"), Value: []byte("v8")})
+			walManager.Append(&Entry{Type: EntryPut, Key: []byte("k9"), Value: []byte("v9")})
+			walManager.Append(&Entry{Type: EntryPut, Key: []byte("k10"), Value: []byte("v10")})
+
+			if test.name == "apply max age retention policy" {
+				for _, seg := range walManager.segments {
+					os.Chtimes(seg.file.Name(), time.Now().Add(-2*time.Hour), time.Now().Add(-2*time.Hour))
+				}
+			}
+
+			walManager.ApplyRetentionPolicy()
+
+			if test.name == "apply max segments retention policy" && len(walManager.segments) != 1 {
+				t.Errorf("expected 1 segment, got %v", len(walManager.segments))
+			}
+
+			if test.name == "apply max age retention policy" && len(walManager.segments) != 0 {
+				t.Errorf("expected 0 segments, got %v", len(walManager.segments))
+			}
+		})
+	}
+}
+
+func deleteDirectoryIfExists(dirPath string) error {
+	err := os.RemoveAll(dirPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("error deleting directory: %w", err)
+	}
+	return nil
 }

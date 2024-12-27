@@ -84,6 +84,7 @@ func NewFileManager(dataDir string, logger *log.Logger) (SSTableManager, error) 
 }
 
 func (ssm SSTableFileSystemManager) Write(fileName string, data []Entry) error {
+	// sort the data by key
 	sort.Slice(data, func(i, j int) bool {
 		return data[i].Key < data[j].Key
 	})

@@ -23,20 +23,37 @@ func assertNoError(t *testing.T, err error) {
 	}
 }
 
+func assertWalManagerAppendCalled(t *testing.T, walMgr *MockWalManager) {
+	t.Helper()
+	if !walMgr.AppendCalled {
+		t.Errorf("expected Append to be called, but it was not")
+	}
+}
+
+func initializeDb(memtableThreshold int, logger *log.Logger, t *testing.T) (*LSM, *MockWalManager) {
+	walMgr := &MockWalManager{}
+	// Create a new instance of the Db
+	database, err := NewDb(Options{
+		MemtableThreshold: memtableThreshold,
+		SstableMgr:        &MockSSTableManager{},
+		Logger:            logger,
+		WalMgr:            walMgr,
+	})
+
+	assertNoError(t, err)
+
+	if !walMgr.ReadAllCalled {
+		t.Errorf("Expected ReadAll to be called, but it was not")
+	}
+
+	return database, walMgr
+}
+
 func TestPutAndGet(t *testing.T) {
 	// Create a logger for testing
 	logger := log.New(os.Stdout, "DB_TEST: ", log.Ldate|log.Ltime|log.Lshortfile)
 
-	// Create a new instance of the Db
-	database, err := NewDb(Options{
-		MemtableThreshold: 1000,
-		SstableMgr:        &MockSSTableManager{},
-		Logger:            logger,
-		WalMgr:            &MockWalManager{},
-	})
-
-	// Test for errors in retrieving the entry
-	assertNoError(t, err)
+	database, walMgr := initializeDb(1000, logger, t)
 
 	// Test data to put into the database
 	key := "user1"
@@ -50,6 +67,8 @@ func TestPutAndGet(t *testing.T) {
 
 	// Put the entry into the database
 	database.Put(entry)
+
+	assertWalManagerAppendCalled(t, walMgr)
 
 	// Now, try to get the entry back
 	retrievedEntry, err := database.Get(key)
@@ -72,18 +91,10 @@ func TestGetNonExistentKey(t *testing.T) {
 	// Create a logger for testing
 	logger := log.New(os.Stdout, "DB_TEST: ", log.Ldate|log.Ltime|log.Lshortfile)
 
-	// Create a new instance of the Db
-	database, err := NewDb(Options{
-		MemtableThreshold: 1000,
-		SstableMgr:        &MockSSTableManager{},
-		Logger:            logger,
-		WalMgr:            &MockWalManager{},
-	})
-
-	assertNoError(t, err)
+	database, _ := initializeDb(1000, logger, t)
 
 	// Try to get an entry that does not exist
-	_, err = database.Get("nonexistent")
+	_, err := database.Get("nonexistent")
 
 	// Expecting an error for a missing key
 	if err == nil {
@@ -101,13 +112,7 @@ func TestConcurrency(t *testing.T) {
 	logger := log.New(os.Stdout, "DB_TEST: ", log.Ldate|log.Ltime|log.Lshortfile)
 
 	// Create a new instance of the Db
-	database, err := NewDb(Options{
-		MemtableThreshold: 10,
-		SstableMgr:        &MockSSTableManager{},
-		Logger:            logger,
-		WalMgr:            &MockWalManager{},
-	})
-	assertNoError(t, err)
+	database, _ := initializeDb(10, logger, t)
 
 	const iterations = 100
 	var wg sync.WaitGroup
@@ -149,13 +154,7 @@ func TestConcurrency(t *testing.T) {
 func TestFlushMemtableToDisk(t *testing.T) {
 	logger := log.New(os.Stdout, "DB_TEST: ", log.Ldate|log.Ltime|log.Lshortfile)
 
-	database, err := NewDb(Options{
-		MemtableThreshold: 3,
-		SstableMgr:        &MockSSTableManager{},
-		Logger:            logger,
-		WalMgr:            &MockWalManager{},
-	})
-	assertNoError(t, err)
+	database, _ := initializeDb(3, logger, t)
 
 	// Add entries to trigger flush
 	for i := 0; i < 3; i++ {
@@ -176,7 +175,7 @@ func TestFlushMemtableToDisk(t *testing.T) {
 	}
 
 	// Add one more entry to check if new memtable works
-	err = database.Put(Entry{Key: "key3", Value: []byte("value3")})
+	err := database.Put(Entry{Key: "key3", Value: []byte("value3")})
 	if err != nil {
 		t.Fatalf("Failed to put entry after flush: %v", err)
 	}
@@ -255,15 +254,8 @@ func TestSerializeDeserialize(t *testing.T) {
 func TestSearchInSSTable(t *testing.T) {
 	logger := log.New(os.Stdout, "DB_TEST: ", log.Ldate|log.Ltime|log.Lshortfile)
 
-	mockSSTableMgr := &MockSSTableManager{}
-	database, err := NewDb(Options{
-		MemtableThreshold: 3,
-		SstableMgr:        mockSSTableMgr,
-		Logger:            logger,
-		WalMgr:            &MockWalManager{},
-	})
+	database, _ := initializeDb(3, logger, t)
 
-	assertNoError(t, err)
 	// Add entries to trigger flush
 	for i := 0; i < 3; i++ {
 		err := database.Put(Entry{Key: fmt.Sprintf("key%d", i), Value: []byte(fmt.Sprintf("value%d", i))})
@@ -291,14 +283,13 @@ func TestSearchInSSTable(t *testing.T) {
 func TestConcurrentGet(t *testing.T) {
 	logger := log.New(os.Stdout, "DB_TEST: ", log.Ldate|log.Ltime|log.Lshortfile)
 
-	database, err := NewDb(Options{
+	database, _ := NewDb(Options{
 		MemtableThreshold: 1000,
 		SstableMgr:        &MockSSTableManager{},
 		Logger:            logger,
 		WalMgr:            &MockWalManager{},
 	})
 
-	assertNoError(t, err)
 	// Add some entries
 	for i := 0; i < 100; i++ {
 		err := database.Put(Entry{Key: fmt.Sprintf("key%d", i), Value: []byte(fmt.Sprintf("value%d", i))})
@@ -330,16 +321,14 @@ func TestErrorHandling(t *testing.T) {
 
 	// Test SSTableManager write error
 	errorMgr := &ErrorMockSSTableManager{writeError: fmt.Errorf("write error")}
-	database, err := NewDb(Options{
+	database, _ := NewDb(Options{
 		MemtableThreshold: 2,
 		SstableMgr:        errorMgr,
 		Logger:            logger,
 		WalMgr:            &MockWalManager{},
 	})
 
-	assertNoError(t, err)
-
-	err = database.Put(Entry{Key: "key1", Value: []byte("value1")})
+	err := database.Put(Entry{Key: "key1", Value: []byte("value1")})
 	if err != nil {
 		t.Fatalf("Failed to put first entry: %v", err)
 	}
@@ -391,13 +380,17 @@ func (m *ErrorMockSSTableManager) FindKey(fileName string, key string) (Entry, e
 }
 
 type MockWalManager struct {
+	ReadAllCalled bool
+	AppendCalled  bool
 }
 
 func (mwm *MockWalManager) Append(entry *wal.Entry) error {
+	mwm.AppendCalled = true
 	return nil
 }
 
 func (mwm *MockWalManager) ReadAll() ([]*wal.Entry, error) {
+	mwm.ReadAllCalled = true
 	return nil, nil
 }
 
